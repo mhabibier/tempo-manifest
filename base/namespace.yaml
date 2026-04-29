@@ -1,0 +1,9 @@
+# Namespace for Grafana Tempo
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tempo
+  labels:
+    app.kubernetes.io/name:      tempo
+    app.kubernetes.io/component: namespace

@@ -1,0 +1,111 @@
+# Deployment for Grafana Tempo
+# Tempo menggunakan emptyDir untuk traces (ephemeral — data hilang saat pod restart)
+# Jika ingin persistent, tambahkan PVC dan mount ke /var/tempo.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: tempo
+  labels:
+    app.kubernetes.io/name:      tempo
+    app.kubernetes.io/component: trace-storage
+    app.kubernetes.io/version:   "2.5.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: tempo
+        app.kubernetes.io/name:      tempo
+        app.kubernetes.io/component: trace-storage
+    spec:
+      serviceAccountName: tempo-sa
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser:    10001   # UID tempo image
+        runAsGroup:   10001
+        fsGroup:      10001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: harbor-secret
+      containers:
+        - name: tempo
+          image: grafana/tempo:2.5.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-config.file=/etc/tempo.yaml"
+          ports:
+            - name:          http
+              containerPort: 3200
+              protocol:      TCP
+            - name:          otlp-grpc
+              containerPort: 4317
+              protocol:      TCP
+            - name:          otlp-http
+              containerPort: 4318
+              protocol:      TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem:   false   # Tempo butuh write ke /var/tempo
+            runAsNonRoot:             true
+            runAsUser:                10001
+            capabilities:
+              drop: ["ALL"]
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds:       5
+            failureThreshold:    12
+            timeoutSeconds:      3
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds:       30
+            timeoutSeconds:      5
+            failureThreshold:    3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 0
+            periodSeconds:       10
+            timeoutSeconds:      3
+            failureThreshold:    3
+            successThreshold:    1
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "256Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "512Mi"
+          volumeMounts:
+            - name:      config
+              mountPath: /etc/tempo.yaml
+              subPath:   tempo.yaml
+              readOnly:  true
+            - name:      data
+              mountPath: /var/tempo   # traces + wal
+            - name:      tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-config
+        - name: data
+          emptyDir: {}   # Ephemeral — ganti dengan PVC jika ingin persistent traces
+        - name: tmp
+          emptyDir: {}

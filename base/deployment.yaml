@@ -35,8 +35,6 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
-      imagePullSecrets:
-        - name: harbor-secret
       containers:
         - name: tempo
           image: grafana/tempo:2.5.0
